@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configure AWS Backup using tags and vault lock feature
+Parameters:
+    CreateNewRole:
+      Type: String
+      AllowedValues:
+        - true
+        - false
+      Default: true
+      Description: "Create new role for AWS Backup. If true, specify RoleName parameter, otherwise specify ExistingRoleArn."
+    RoleName:
+      Type: String
+      Default: "demo-aws-backup-role"
+      Description: "AWS Backup role name. Required if CreateNewRole param is true."
+    ExistingRoleArn:
+      Type: String
+      Description: "IAM Role Arn. Required if CreateNewRole param is false."
+    
+    CreateNewKMSKey:
+      Type: String
+      AllowedValues:
+        - true
+        - false
+      Default: true
+      Description: "Create new KMS key for AWS Backup. If true, specify KeyName parameter, otherwise specify ExistingKeyArn."
+    KeyName:
+      Type: String
+      Default: demo-aws-backup-kms
+      Description: "AWS KMS Key name. Required if CreateNewKMSKey param is true."
+    ExistingKeyArn:
+      Type: String
+      Description: "KMS Key Arn. Required if CreateNewKMSKey param is false."
+    
+    CreateNewBackupVault:
+      Type: String
+      AllowedValues:
+        - true
+        - false
+      Default: true
+      Description: "Create new Backup Vault for AWS Backup."
+    BackupVaultName:
+      Type: String
+      Default: "demo-aws-backup-vault"
+      Description: "Specify AWS Backup Vault name."
+    
+    BackupPlanName:
+      Type: String
+      Default: "demo-aws-backup-plan"
+      Description: "AWS Backup plan name."
+    
+    BackupRuleName:
+      Type: String
+      Default: "demo-aws-backup-rule"
+      Description: "AWS Backup rule name."
+    
+    BackupScheduleExpression:
+      Type: String
+      Default: "cron(0 1 * * ? *)"
+      Description: "AWS Backup cron expression."
+    
+    BackupDeleteAfterDays:
+      Type: Number
+      Default: 45
+      Description: "Days to expire backups from vault."
+    
+    BackupSelectionName:
+      Type: String
+      Default: "demo-aws-backup-selection"
+      Description: "AWS Backup selection name."
+    
+    BackupConditionTagKey:
+      Type: String
+      Default: "Backup"
+      Description: "Tag:Key associated with the resources to back up."
+    
+    BackupConditionTagValue:
+      Type: String
+      Default: "True"
+      Description: "Tag:Value associated with the resources to back up."
+    
+    VaultMinRetentionDays:
+      Type: Number
+      Default: 30
+      Description: "Retention period in days that the vault retains backup data."
+    
+    VaultChangeableForDays:
+      Type: Number
+      Default: 3
+      Description: "Number of days before the vault lock. After this period, Vault Lock becomes immutable and cannot be changed or deleted."
+    
+
+Conditions:
+  CreateNewRole: !Equals [!Ref CreateNewRole, "true"]
+  CreateNewKey: !Equals [!Ref CreateNewKMSKey, "true"]
+  CreateNewBackupVault: !Equals [!Ref CreateNewBackupVault, "true"]
+  
+Resources:
+  IAMROLEBKP:
+    Type: 'AWS::IAM::Role'
+    Condition: CreateNewRole
+    Properties: 
+      AssumeRolePolicyDocument: {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "backup.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+      Description: "Allows AWS Backup to access AWS resources on your behalf to Backup and Restore."
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Path: /
+      RoleName: !Ref RoleName
+  
+  KMSBKP:
+    Type: 'AWS::KMS::Key'
+    Condition: CreateNewKey
+    DeletionPolicy: Retain
+    Properties: 
+      Description: A symmetric KMS key to AWS Backup Vault
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Ref KeyName
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Join 
+                - ''
+                - - 'arn:aws:iam::'
+                  - !Ref 'AWS::AccountId'
+                  - ':root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: Allow AWS Backup IAM Role use of the key
+            Effect: Allow
+            Principal:
+              AWS: !If [CreateNewRole, !GetAtt IAMROLEBKP.Arn, !Ref ExistingRoleArn]
+            Action:
+              - 'kms:DescribeKey'
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey'
+              - 'kms:GenerateDataKeyWithoutPlaintext'
+            Resource: '*'
+      MultiRegion: true
+      PendingWindowInDays: 30
+      
+  BKPVAULT:
+    Type: 'AWS::Backup::BackupVault'
+    DeletionPolicy: Retain
+    Condition: CreateNewBackupVault
+    Properties:
+      BackupVaultName: !Ref BackupVaultName
+      EncryptionKeyArn: !If [CreateNewKey, !GetAtt KMSBKP.Arn, !Ref ExistingKeyArn]
+      LockConfiguration: 
+        ChangeableForDays: !Ref VaultChangeableForDays
+        MinRetentionDays: !Ref VaultMinRetentionDays
+    
+  BACKUPPLAN:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan: 
+        BackupPlanName: !Ref BackupPlanName
+        BackupPlanRule:
+          - 
+            RuleName: !Ref BackupRuleName
+            TargetBackupVault: !If [ CreateNewBackupVault, !GetAtt BKPVAULT.BackupVaultName, !Ref BackupVaultName ]
+            ScheduleExpression: !Ref BackupScheduleExpression
+            Lifecycle: {
+                DeleteAfterDays: !Ref BackupDeleteAfterDays
+            }
+  
+  STORAGEBKPSELECTION:
+    Type: AWS::Backup::BackupSelection
+    DependsOn: BACKUPPLAN
+    Properties:
+      BackupSelection: 
+        SelectionName: !Ref BackupSelectionName
+        IamRoleArn: !If [ CreateNewRole, !GetAtt IAMROLEBKP.Arn, !Ref ExistingRoleArn ] 
+        ListOfTags:
+          - 
+            ConditionType: "StringEquals"
+            ConditionKey: !Ref BackupConditionTagKey
+            ConditionValue: !Ref BackupConditionTagValue
+      BackupPlanId: !Ref BACKUPPLAN
+
+Outputs:
+  IamRoleBackup:
+    Description: IAM Role Arn
+    Value: !If [ CreateNewRole, !GetAtt IAMROLEBKP.Arn, !Ref ExistingRoleArn ]
+  KMSKeyBackup:
+    Description: KMS Key Arn
+    Value: !If [ CreateNewKey, !GetAtt KMSBKP.Arn, !Ref ExistingKeyArn ]
+  BackupVaultArn:
+    Description: Backup Vault Name
+    Value: !If [ CreateNewBackupVault, !GetAtt BKPVAULT.BackupVaultName, !Ref BackupVaultName ]
+  BackupPlanArn:
+    Description: BackupPlan Arn
+    Value: !GetAtt BACKUPPLAN.BackupPlanArn
