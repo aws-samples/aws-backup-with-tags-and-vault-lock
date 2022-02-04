@@ -7,19 +7,6 @@ We recommend that you use this template as a starting point for creating your ow
 Using this code `I Agree` I'm solely responsible for any security issue caused due any misconfiguration and/or bugs.
 
 ## Instructions
-The main template [cfn-demo-aws-backup.yaml](cfn-demo-aws-backup.yaml) is used to set up all resources using AWS SAM cli.
-
-To build the stack, issue the following command. 
-**Note**: You need to have docker installed and running to perform this.
-```
-sam build --use-container --container-env-var WRAPT_EXTENSIONS=false
-```
-
-Afterwards, you will need to deploy the generated stack. The following command will do it:
-```
-sam deploy --guided
-```
-
 <a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new">Launch the AWS CloudFormation stack</a> using the [cfn-demo-aws-backup.yaml](cfn-demo-aws-backup.yaml) template file as the source.
 **Note**: Check AWS account and region before stack deploy.
 
