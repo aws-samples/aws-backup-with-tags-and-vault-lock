@@ -8,12 +8,13 @@ Using this code `I Agree` I'm solely responsible for any security issue caused d
 
 ## Instructions
 <a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/new">Launch the AWS CloudFormation stack</a> using the [cfn-demo-aws-backup.yaml](cfn-demo-aws-backup.yaml) template file as the source.
-**Note**: Check AWS account and region before stack deploy.
 
-To get the template, issue the following command.
+To get the template, clone the repository.
 ```
 git clone git@github.com:aws-samples/aws-backup-with-tags-and-vault-lock.git
 ```
+**Note**: Check AWS account and region before stack deploy.
+
 
 ## Additional Resources
 In the *AWS CloudFormation User Guide*, you can view more information about the following topics:
